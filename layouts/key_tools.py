@@ -21,7 +21,7 @@ def resetKeys(keybow):
             keys[x].release_function = None
 
 # This sets up each of key press, key hold and key release.
-# It's more or less making a PMK key replicated a "normal" key
+# It's more or less making a PMK key replicate a "normal" key
 def setKeyEmulation(keybow, key_to_set, keycode):
     @keybow.on_press(key_to_set)
     def press_handler(key):
@@ -34,7 +34,7 @@ def setKeyEmulation(keybow, key_to_set, keycode):
         keyboard.release(keycode)
         
 # This sets up just key press and key release.
-# It's more or less making a PMK key replicated a "modifier" key
+# It's more or less making a PMK key replicate a "modifier" key
 def setModifierKeyEmulation(keybow, key_to_set, keycode):
     @keybow.on_press(key_to_set)
     def press_handler(key):
@@ -43,6 +43,7 @@ def setModifierKeyEmulation(keybow, key_to_set, keycode):
     def release_handler(key):
         keyboard.release(keycode)
 
+# Similar to above, but mouse buttons
 def setMouseButtonEmulation(keybow, mouse, key_to_set, mouseButton):
     @keybow.on_press(key_to_set)
     def press_handler(key):
