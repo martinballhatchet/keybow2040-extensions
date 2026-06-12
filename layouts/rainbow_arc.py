@@ -20,6 +20,8 @@ def setup(this_keybow):
 
     global keybow
     keybow = this_keybow
+    keybow.led_sleep_enabled = True
+    keybow.led_sleep_time = 1
 
 def setColours(hue, saturation, value):
     
@@ -44,8 +46,6 @@ def constrainValue(value):
         value -= 1
     if value < 0:
         value += 1
-        
-    print(value)
     return value
                 
 def setBand_hsv(band, hue, saturation, value):
@@ -80,3 +80,4 @@ if __name__ == '__main__':
     while True:
         keybow.update()
         update()
+

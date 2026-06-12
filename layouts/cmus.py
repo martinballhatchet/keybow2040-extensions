@@ -19,6 +19,7 @@ cmus_extra_active = False
 
 def setup(keybow):
     #mouse = Mouse(usb_hid.devices)
+    keybow.led_sleep_enabled = True
     keybow.led_sleep_Time = 30
     keys = keybow.keys
     consumer_control = ConsumerControl(usb_hid.devices)
