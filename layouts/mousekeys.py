@@ -23,7 +23,7 @@ mouse = Mouse(usb_hid.devices)
 def setup(keybow):
     keys = keybow.keys
     keybow.led_sleep_enabled = True
-    keybow.led_sleep_Time = 30
+    keybow.led_sleep_time = 30
     tools.resetKeys(keybow)
 
 

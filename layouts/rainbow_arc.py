@@ -20,8 +20,8 @@ def setup(this_keybow):
 
     global keybow
     keybow = this_keybow
-    keybow.led_sleep_enabled = True
-    keybow.led_sleep_time = 1
+    #keybow.led_sleep_enabled = True
+    #keybow.led_sleep_time = 1
 
 def setColours(hue, saturation, value):
     

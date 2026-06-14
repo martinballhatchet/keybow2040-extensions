@@ -14,7 +14,7 @@ def setup(this_keybow):
     #mouse = Mouse(usb_hid.devices)
     global keybow
     keybow = this_keybow
-    keybow.led_sleep_Time = 30
+    keybow.led_sleep_time = 30
     keybow.set_all(0, 0, 0)
 
     keys=keybow.keys

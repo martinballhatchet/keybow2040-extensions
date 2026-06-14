@@ -20,7 +20,7 @@ cmus_extra_active = False
 def setup(keybow):
     #mouse = Mouse(usb_hid.devices)
     keybow.led_sleep_enabled = True
-    keybow.led_sleep_Time = 30
+    keybow.led_sleep_time = 30
     keys = keybow.keys
     consumer_control = ConsumerControl(usb_hid.devices)
     keybow.set_all(*black)
@@ -81,13 +81,15 @@ def setup(keybow):
     keys[13].set_led(0,128,255)
     @keybow.on_press(keys[13])
     def press_handler(key):
-        keyboard.send(Keycode.KEYPAD_MINUS)
+        consumer_control.send(ConsumerControlCode.VOLUME_DECREMENT)
+#        keyboard.send(Keycode.KEYPAD_MINUS)
 
     # CMUS Volume Up = +
     keys[14].set_led(128,0,255)
     @keybow.on_press(keys[14])
     def press_handler(key):
-        keyboard.send(Keycode.KEYPAD_PLUS)
+        consumer_control.send(ConsumerControlCode.VOLUME_INCREMENT)
+#        keyboard.send(Keycode.KEYPAD_PLUS)
 
     # Screen on F1
     keys[11].set_led(128,128,255)
