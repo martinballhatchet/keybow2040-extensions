@@ -5,6 +5,28 @@ keyboard = Keyboard(usb_hid.devices)
 
 black = (0, 0, 0)
 
+
+class Colours:
+    red = (255, 0, 0)
+    pale_red = (255, 25, 25)
+    orange = (255, 56, 0)
+    pale_orange = (255, 76, 25)
+    yellow = (255, 162, 0)
+    pale_yellow = (255, 171, 25)
+    green = (20, 255, 0)
+    pale_green = (48, 255, 30)
+    blue = (0, 193, 255)
+    pale_blue = (66, 209, 255)
+    indigo = (35, 0, 255)
+    pale_indigo = (123, 102, 255)
+    violet = (158, 0, 255)
+    pale_violet = (183, 66, 255)
+    pink = (255, 0, 91)
+    pale_pink = (255, 66, 134)
+    black = (0, 0, 0)
+    white = (255, 255, 255)
+
+
 def resetKeys(keybow):
     
     keybow.set_all(*black)
@@ -19,6 +41,11 @@ def resetKeys(keybow):
             keys[x].press_function = None
             keys[x].hold_function = None
             keys[x].release_function = None
+
+def colour_by_map(keybow, colour_map):
+    for i in range(16):
+        keybow.keys[i].set_led(*colour_map[i])
+
 
 # This sets up each of key press, key hold and key release.
 # It's more or less making a PMK key replicate a "normal" key

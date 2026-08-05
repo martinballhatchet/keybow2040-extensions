@@ -8,7 +8,7 @@ from layouts.key_tools import resetKeys
 
 # Configuration constants
 long_press_duration = 0.3  # Seconds to hold Mode Key to change modes
-debounce_delay = 0.05       # Basic debounce interval for adjustments
+debounce_delay = 0.2       # Basic debounce interval for adjustments
 
 # Step sizes for adjustments
 hue_step = 0.006
@@ -22,11 +22,18 @@ mode_key_press_time = 0.0      # Tracks when Mode Key was pressed down
 mode_key_handled = False       # Prevents short-press trigger after a long-press
 
 # Non-blocking timer variables
-key_debounce_end_time = 0.0 # When keys can be pressed again
+key_debounce_end_time = 0.05 # When keys can be pressed again
 
 # Global variables for keybow and keys
 keybow = None
 keys = None
+
+initial_hues = [0.0, 0.037, 0.106, 0.32, 0.54, 0.69, 0.77, 0.94]
+pale_saturations = [0.9, 0.9, 0.9, 0.88, 0.74, 0.6, 0.74, 0.74]
+colour_names = ["red", "orange", "yellow", "green", "blue", "indigo", "violet", "pink"]
+# Orange = hsv_to_rgb(0.037, 1, 1)
+# Pale_Orange = hsv_to_rgb(0.037, 0.9, 1)
+# 
 
 def update_key_led(key):
     """Calculates and pushes current HSV values to a physical hardware key."""
@@ -48,10 +55,20 @@ def setup(this_keybow):
     
     # Configure keys 1 to 15 default spectrum attributes
     for i in range(1, 16):
-        keys[i].hue = (i - 1) / 14
+        #keys[i].hue = initialHues[i % len(initialHues)]
+        keys[i].hue = initial_hues[i//2]
         keys[i].saturation = 1.0
+        if i % 2 == 1:
+            keys[i].saturation = pale_saturations[i//2]            
+            #print(keys[i].saturation)
         keys[i].value = 1.0
         update_key_led(keys[i])
+        
+        message = f"{colour_names[i//2]} = {keys[i].rgb[0], keys[i].rgb[1], keys[i].rgb[2]}"
+        
+        if i % 2 == 1:
+            message = "pale_" + message
+#        print(message)
 
 def update_key_colours(key):
     """Applies step adjustments to a single key object based on active mode."""
@@ -157,4 +174,5 @@ if __name__ == '__main__':
     while True:
         keybow.update()
         update()
+
 
