@@ -8,12 +8,38 @@ import layouts.key_tools as tools
 import time
 from adafruit_hid.consumer_control import ConsumerControl
 from adafruit_hid.consumer_control_code import ConsumerControlCode
-#from enum import Enum
+
+
+
+#Left handed Ardux ... mostly. I can't see why Shift is so complicated, so I've changed it.
+
+#These are the Keybow keys I'm using.
+Ardux_Keys = [1, 5, 9, 13, 0, 4, 8, 12]
+
+
+"""
+Some unused keys
+1100 0010
+0100 1010
+0100 0010
+0010 0100
+0100 1000
+0100 0010
+0100 0001
+0101 0000
+0010 1000
+0010 0010 -> will be shift lock
+
+"""
+
+
+
 
 class Mode:
     Normal = 0
     Mouse = 1
     Navigation = 2
+    Hold = 3
 
 mouse = Mouse(usb_hid.devices)
 consumer = ConsumerControl(usb_hid.devices)
@@ -25,6 +51,8 @@ timer_started = False
 time_press_started = 0
 hold_delay = 0.2
 current_mode = Mode.Normal
+leaving_hold = False
+current_hue = 0.5
 
 directions_held = []
 
@@ -35,35 +63,11 @@ direction_down = 3
 direction_scroll_up = 4
 direction_scroll_down = 5
 
-held_keys = []
+held_keys = 0
 
-#Left handed Ardux ... mostly. I can't see why Shift is so complicated, so I've changed it.
-#OK ... need to be able to distinguish between held and pressed
-# Can try using the built in functionality?
-#
-# Let's do this .. when keys are pressed, we start a timer
-# ... when we get to H seconds we say keys are held
-# ... thought about doing a keypress when we press down, but that won't work
-# ... as we won't know if we are going to hold them
-# ... so has to be on the release
-# ... so ... until we get to H seconds, capture all keys pressed
-# .... when all keys released, send that combo!
-# What do we need to implement?
-# Combo -> key press
-# Combo -> change mode
-# Combo -> Lock modifier
-# Hold + tap -> key press
 
 keys_pressed_for_tap = 0
 key_modifiers_active = 0b0000
-
-
-# Keybow 2040 Hardware Index Tracking Map
-# Top Row buttons:    Key 4 (A), Key 5 (R), Key 6 (T), Key 7 (S)
-# Bottom Row buttons: Key 0 (E), Key 1 (Y), Key 2 (I), Key 3 (O)
-
-#These are the Keybow keys I'm using. This is "upside down" because for me I'm trying it that way :)
-Ardux_Keys = [14, 10, 6, 2, 15, 11, 7, 3]
 
 #OK - got the idea of using a bitmask like this from Google (AI), and I like it. It shows easily which
 #of the 8 keys need to be activated. 
@@ -123,10 +127,45 @@ global_key_modifiers = [
     (0b10000001, 0b1000, Keycode.LEFT_ALT, "<left alt>")
 ]
 
+holdable_combos = [
+    #Bitmask of hold key, Bitmask of taps, key to press, debug print
+    #First - numbers - now, I'm using a different method here, it's
+    #called BINARY
+    (0b10000000, (0b00001000, Keycode.ZERO, "0")),
+    (0b10000000, (0b00010000, Keycode.ONE, "1")),
+    (0b10000000, (0b00100000, Keycode.TWO, "2")),
+    (0b10000000, (0b00110000, Keycode.THREE, "3")),
+    (0b10000000, (0b01000000, Keycode.FOUR, "4")),
+    (0b10000000, (0b01010000, Keycode.FIVE, "5")),
+    (0b10000000, (0b01100000, Keycode.SIX, "6")),
+    (0b10000000, (0b01110000, Keycode.SEVEN, "7")),
+    (0b10000000, (0b00000001, Keycode.EIGHT, "8")),
+    (0b10000000, (0b00010001, Keycode.NINE, "9")),
+    #Now Ardux Parantheticals
+    (0b00010000, (0b10000000, Keycode.LEFT_BRACKET, Keycode.SHIFT, "{")),
+    (0b00010000, (0b01000000, Keycode.NINE, Keycode.SHIFT, "(")),
+    (0b00010000, (0b00100000, Keycode.ZERO, Keycode.SHIFT, ")")),
+    (0b00010000, (0b00001000, Keycode.RIGHT_BRACKET, Keycode.SHIFT, "}")),
+    (0b00010000, (0b00000100, Keycode.LEFT_BRACKET, "[")),
+    (0b00010000, (0b00000010, Keycode.RIGHT_BRACKET, "]")),
+    #Now symbols - but I'm going rogue again.
+    #We already have exclamation mark as a global
+    #and I am much more likely to use double-quote " than ` backtick
+    #Oh - UK layout means this will break for others, I am sorry
+    (0b00000001, (0b10000000, Keycode.TWO, Keycode.SHIFT, "\"")),
+    (0b00000001, (0b01000000, Keycode.SEMICOLON, ";")),
+    (0b00000001, (0b00100000, Keycode.KEYPAD_BACKSLASH,"\\")),
+    (0b00000001, (0b00010000, Keycode.POUND, "#")),
+    (0b00000001, (0b00001000, Keycode.EQUALS, "=")),
+    (0b00000001, (0b00000100, Keycode.MINUS, "-")),
+    (0b00000001, (0b00000010, Keycode.FORWARD_SLASH, Keycode.SHIFT, "?")),
+
+    
+]
 
 #DONE: Lock on modifiers. I think One shot by default, but hold maybe later for lock? Maybe they are just key_held at that point?
     
-#TODO: Hold-tap layers
+
 
 #DONE: Arrow layer
 navigation_binding = 0b00100101
@@ -135,15 +174,20 @@ navigation_binding = 0b00100101
 #DONE: Mouse layer
 mouse_binding = 0b01010010
 
-
-#TODO: Commands... Copy, Paste, Cut, Undo, Redo
+#TODO: Finish Hold-tap layers
+#TODO: Fix: When coming out of hold tap, modifiers aren't reapplied
+#TODO: Commands... Copy, Paste, Cut, Undo, Redo - not the ones that Ardux wants
 #TODO: Make some of this easier using the unused codes
+#TODO: Look for things I need that aren't there - e.g. ~
 #TODO: Function keys?
 #TODO: Shift Lock?
 #TODO: When Shift (etc) active, pass them through to the Navigation and Mouse mode. Might be as simple as pressing
 # them before the navigation
 #TODO: Sort out exclamation mark
-
+#TODO: Get return working in nav modes
+#TODO: FIX: Getting out of navigation mode activates Page Up
+#TODO: Add Autocomplete mode - type then <space> puts word, but pressing <undo> deletes all characters except ones
+#      typed
 
 def setup(this_keybow):
     global keys, keybow
@@ -154,109 +198,231 @@ def setup(this_keybow):
     tools.resetKeys(keybow)
 
 
-
 def update():
-    global keys_pressed_for_tap
-    global current_mode
-    global held_keys
+    global keys_pressed_for_tap, current_mode, leaving_hold
     
+    check_timers()
 
-    add_to_keys_tapped()
-
-    #Need to do this outside the below as there may not be any keys pressed right now :)
-    #... but only if we are in Normal mode
-    if current_mode == Mode.Normal:
-        check_timers()
-
-    if ((keys_pressed_for_tap != 0) and not any_keys_pressed()):
-# Some keys have been pressed but now everything is released!
-
-# Main checks for key presses
-
-        found_keybinding = False
-        held_keys.clear()
-
-
-#Some of these are global
-        if keys_pressed_for_tap == navigation_binding:
-            print("Toggle Navigation mode")
-            current_mode = Mode.Navigation if current_mode != Mode.Navigation else Mode.Normal
-            setup_navigation()
-            found_keybinding = True
-            
-        if keys_pressed_for_tap == mouse_binding:
-            print("Toggle Mouse mode")
-            current_mode = Mode.Mouse if current_mode != Mode.Mouse else Mode.Normal
-            setup_mouse()
-            found_keybinding = True 
-
-        for key_modifier in global_key_modifiers:
-            if key_modifier[0] == keys_pressed_for_tap:
-                process_key_modifier(key_modifier)
-                found_keybinding = True
-
-        for keybinding in global_keybindings:
-            if keybinding[0] == keys_pressed_for_tap:
-                process_key(keybinding)
-                found_keybinding = True
-    
-        if current_mode == Mode.Normal:
+    if current_mode == Mode.Hold:
+        check_for_hold_taps()
         
-            for keybinding in default_layer_keybindings:
-                if keybinding[0] == keys_pressed_for_tap:
-                    process_key(keybinding)
+    else:
+
+        if leaving_hold:
+            #Don't want to process the rest of everything, but we
+            #can now clear held keys.
+            #Also clear tapped keys so we start from a clean slate
+            for key in keys_from_bitmask(held_keys):
+                key.set_led(0, 0, 0)
+                
+            set_held_keys(0)
+            keys_pressed_for_tap = 0 
+            leaving_hold = False
+        else:
+
+            add_to_keys_tapped()
+            if ((keys_pressed_for_tap != 0) and not any_keys_pressed()):
+        # Some keys have been pressed but now everything is released!
+        #(Note: will need a special minimal version of this for Hold mode. "Everything else is released" or something)
+
+        # Main checks for key presses
+
+                found_keybinding = False
+
+        #Some of these are global
+                if keys_pressed_for_tap == navigation_binding:
+                    print("Toggle Navigation mode")
+                    current_mode = Mode.Navigation if current_mode != Mode.Navigation else Mode.Normal
+                    setup_navigation()
+                    found_keybinding = True
+                    
+                if keys_pressed_for_tap == mouse_binding:
+                    print("Toggle Mouse mode")
+                    current_mode = Mode.Mouse if current_mode != Mode.Mouse else Mode.Normal
+                    setup_mouse()
+                    found_keybinding = True 
+
+                for key_modifier in global_key_modifiers:
+                    if key_modifier[0] == keys_pressed_for_tap:
+                        process_key_modifier(key_modifier)
+                        found_keybinding = True
+
+                for keybinding in global_keybindings:
+                    if keybinding[0] == keys_pressed_for_tap:
+                        process_key(keybinding)
+                        found_keybinding = True
+            
+                if current_mode == Mode.Normal:
+                
+                    for keybinding in default_layer_keybindings:
+                        if keybinding[0] == keys_pressed_for_tap:
+                            process_key(keybinding)
+                            found_keybinding = True
+
+                elif current_mode == Mode.Navigation:
+                    found_keybinding = True
+                    
+                else: #Mouse mode!
                     found_keybinding = True
 
-#I think I only need to run this within "normal mode".
+                if not found_keybinding:
+                    print("Missing keybinding: ", f"{keys_pressed_for_tap >> 4:04b} {keys_pressed_for_tap & 0x0F:04b}")
+                keybow.set_all(0, 0, 0)
+                keys_pressed_for_tap = 0
+                set_key_lights_when_unpressed()
 
-
-        elif current_mode == Mode.Navigation:
-            pass
-            found_keybinding = True
-            #if we tap the navigation press again, go back to normal
+        if current_mode == Mode.Mouse:
+            move_mouse()
             
-        else: #Mouse mode!
+    set_colours()
 
-            found_keybinding = True
-            #if we tap the navigation press again, go back to normal
-            #clear the handlers!
+def int_as_binary(value):
+    return f"{value >> 4:04b} {value & 0x0F:04b}"
 
-        if not found_keybinding:
-            print("Missing keybinding: ", f"{keys_pressed_for_tap >> 4:04b} {keys_pressed_for_tap & 0x0F:04b}")
-        keybow.set_all(0, 0, 0)
-        keys_pressed_for_tap = 0
-        set_key_lights_when_unpressed()
 
-    if current_mode == Mode.Mouse:
-        move_mouse()
+    
+
+def check_for_hold_taps():
+    global keys_pressed_for_tap
+    #Only come into this when we are in hold mode
+    if not current_mode == Mode.Hold:
+        raise Exception("We are trying to check for hold taps, but not in Hold Mode!")
         
+    #print("Checking for hold taps!")
+
+    #Am going to use the add_to_keys_tapped() function 
+    add_to_keys_tapped(exclude_bitmask = held_keys)
+            
+#    if (keys_pressed_for_tap) > 0:
+#        print("Held keys: ", int_as_binary(held_keys), ", Tapped keys: ", int_as_binary(keys_pressed_for_tap), "... now process them!")
+        #print(tapped_keys, ":", held_keys, ":", keys_pressed_for_tap)
+#    print(held_keys, ":", keys_pressed_for_tap)
+#    print(any_keys_pressed(held_keys))
+
+    if (keys_pressed_for_tap > 0) and not any_keys_pressed(held_keys):
+#        print("hi")
+        #We have some tapped keys, and now everything is released. 
+        # Let's see if we can find a combo for this!
+        found_combo = False
+        for holdable_combo in holdable_combos:
+            if (holdable_combo[0] == held_keys) and (holdable_combo[1][0] == keys_pressed_for_tap):
+#                print("Found hold-tap combo: ", f"{held_keys >> 4:04b} {held_keys & 0x0F:04b}", ":", f"{keys_pressed_for_tap >> 4:04b} {keys_pressed_for_tap & 0x0F:04b}")
+                process_key(holdable_combo[1])
+                found_combo = True
+
+        if not found_combo:
+            print("Missing hold-tap combo: ", int_as_binary(held_keys), ":", int_as_binary(keys_pressed_for_tap))
+        
+        #Clear the tapped keys now - we are done with them.
+        for key in keys_from_bitmask(keys_pressed_for_tap):
+            key.set_led(0, 0, 0)
+        keys_pressed_for_tap = 0
+        
+    #TODO: clear colours
+    #No, non, no ... we need holdables!
+    #holdable_keys
+    #holdable_consumer_controls
+    #define some combos that can be held. Anything above these gets put into tapped.
+    #nah - we have to go with first key held to activate combo I think. If we need cleverer combos later, do them later.
+    #Sigh.
+    #We should then have holdable + tapped = key_press
+    #First holdables should be the normal layers. Can think about whether other holdables make sense - but beware! If there are overlaps
 
 def check_timers():
+    global current_mode
     #so...
     # if we have started a timer
     # .... if nothing pressed, clear the timer
     # ... if something pressed and passed the hold timer then
     # ...... we are in hold mode! Stand by for more code
-    # if no timer, but a key is pressed then start the timer :)
+    # if no timer, but a holdable key is pressed then start the timer :)
+    
+    #First key held is the on that will activate upon release
     global timer_started
-    if timer_started:
-        if not any_keys_pressed():
-            timer_started = False
-            held_keys=[]
+    global leaving_hold
+    global keys_pressed_for_tap
+
+    if not any_holdable_keys_pressed():
+        if (current_mode == Mode.Hold):
+            #We were in hold mode - let's not clear held keys just yet
+            # ... main loop needs to know we are coming out of hold
+            leaving_hold = True
         else:
-            if (time.monotonic() - time_press_started) > hold_delay:
-                store_held_keys()
+            #We weren't holding, so let's clear held_keys
+            if held_keys >0 : set_held_keys(0)
+        
+ #       if timer_started: print("timer stopped")
+        timer_started = False
+        current_mode = Mode.Normal
+
     else:
-        if any_keys_pressed():
-            start_timer()
+        if timer_started:
+#            print(time.monotonic() - time_press_started)
+            if (time.monotonic() - time_press_started) > hold_delay:
+                #We are locked in. We are in Hold Mode Team!
+                print("Hold mode")
+                current_mode = Mode.Hold
+                timer_started = False
+
+                #Reset these now - we are in hold mode, so we don't want to process any taps that were pressed before the hold was activated
+                keys_pressed_for_tap = 0
+        else:            
+        #Timer not started. If we are already in hold mode, no need to start timer.
+            if not current_mode == Mode.Hold:
+#                print("timer started!")
+                start_timer()
+                store_held_keys()
+                
+def get_holdable_bitmasks():
+    holdables = []
+    for item in holdable_combos:
+        if not item[0] in holdables:
+            holdables.append(item[0])
+    return holdables
+
 
 def store_held_keys():
-    for index, key_number in enumerate(Ardux_Keys):
-        if keybow.keys[key_number].pressed:
-            if not index in held_keys:
-                held_keys.append(index)
-    print("held keys:", held_keys)
+    set_held_keys(get_held_holdables())
 
+
+def any_holdable_keys_pressed():
+    return get_held_holdables() > 0
+
+
+def get_held_holdables():
+    held_holdables = 0
+    holdable_bitmasks = get_holdable_bitmasks() 
+    for index, key_number in enumerate(reversed(Ardux_Keys)):
+        if keybow.keys[key_number].pressed and check_bits(holdable_bitmasks, index):
+            held_holdables = set_bit(held_keys, index)
+    return held_holdables
+
+
+def set_held_keys(value):
+    global held_keys
+    #print("Setting held keys:", int_as_binary(value), ", from:", source, ", leaving hold:", leaving_hold)
+    held_keys = value
+
+
+
+
+
+
+
+
+def ardux_key_pressed(index):
+    return ardux_key_by_index(index).pressed
+
+def ardux_key_by_index(index):
+    return keys[Ardux_Keys[7 - index]]
+
+def keys_from_bitmask(bitmask):
+    return_keys = []
+    for index in range(8):
+        if (check_bit(bitmask, index)):
+            return_keys.append(ardux_key_by_index(index))
+    
+    return return_keys
 
 def start_timer():
     global time_press_started
@@ -273,10 +439,28 @@ def set_key_lights_when_unpressed():
         else:
             if modifier_active(index - 4):
                 keys[key_number].set_led(255,0,0)
-            
+
+def set_bit(value, bit_index):
+    return value | (1 << bit_index)
+
+def clear_bit(value, bit_index):
+    return value & ~(1 << bit_index)
+
+def get_bit(value, bit_index):
+    return value & (1 << bit_index)
+
+def check_bit(value, bit_index):
+    return get_bit(value, bit_index) > 0
+
+def check_bits(list_of_values, bit_index):    
+    for value in list_of_values:
+        if check_bit(value, bit_index): return True
+    return False
+
             
 def modifier_active(key_position):
     return key_modifier_is_active(global_key_modifiers[key_position])
+
 
 def process_key(keybinding):
     print(keybinding[len(keybinding)-1])
@@ -284,7 +468,7 @@ def process_key(keybinding):
     #keys to pass. Nifty!
     keys_to_send = keybinding[1:len(keybinding)-1]
     keys_to_send = add_modifiers(keys_to_send)
-    print(keys_to_send)
+    #print(keys_to_send)
     keyboard.send(*keys_to_send)
     
 def process_key_modifier(key_modifier):
@@ -295,26 +479,29 @@ def process_key_modifier(key_modifier):
     print(key_modifiers_active)
     
 
-def add_to_keys_tapped():
+def add_to_keys_tapped(exclude_bitmask = 0):
     global keys_pressed_for_tap
-    #OK - we reverse here because we want the most significant bit to start on the left
-    for index, key_number in enumerate(reversed(Ardux_Keys)):
-        if keys[key_number].pressed:
-            keys_pressed_for_tap |= (1 << index)
-            keys[key_number].set_led(255, 255, 255)
+    for index in range(8):
+        if not check_bit(exclude_bitmask, index):
+            if ardux_key_pressed(index):
+#                print("Adding key to tapped: ", index, "exclude:", int_as_binary(exclude_bitmask))
+                keys_pressed_for_tap |= (1 << index)
+                ardux_key_by_index(index).set_led(255, 255, 255)
+ 
 
-def any_keys_pressed():
-    for index, key_number in enumerate(Ardux_Keys):
-        if keybow.keys[key_number].pressed:
+
+def any_keys_pressed(exclude_bitmask = 0):
+    for index, key_number in (enumerate(reversed(Ardux_Keys))):
+        if keybow.keys[key_number].pressed and not check_bit(exclude_bitmask, index):
             return True
     return False
 
 def get_current_mask():
     mask = 0
     #OK - we reverse here because we want the most significant bit to start on the left
-    for index, key_number in enumerate(reversed(Ardux_Keys)):
-        if keybow.keys[key_number].pressed:
-            #bitshift something what now?
+    for index in range(8):
+        if ardux_key_pressed(index):
+            #bitshift
             mask |= (1 << index)    
     return mask
 
@@ -323,28 +510,35 @@ def add_modifiers(keys_to_send):
         if key_modifier_is_active(modifier):
             keys_to_send += (modifier[2],)
     return keys_to_send        
-            
+           
 
 def key_modifier_is_active(modifier):
     return (key_modifiers_active & modifier[1]) > 0
 
+def key_number_is_in_keys_integer(key_number, keys_integer):
+    return ((1 << key_number) & keys_integer) > 0
 
 def setup_mouse():
     if (current_mode == Mode.Mouse):
-        setMouseMove(keybow, keys[Ardux_Keys[4]], direction_left, x=-8)
-        setMouseMove(keybow, keys[Ardux_Keys[5]], direction_down, y=8)
-        setMouseMove(keybow, keys[Ardux_Keys[6]], direction_right, x=8)
-        setMouseMove(keybow, keys[Ardux_Keys[1]], direction_up, y=-8)
+        set_mouse_move(keybow, keys[Ardux_Keys[4]], direction_left, x=-8)
+        set_mouse_move(keybow, keys[Ardux_Keys[5]], direction_down, y=8)
+        set_mouse_move(keybow, keys[Ardux_Keys[6]], direction_right, x=8)
+        set_mouse_move(keybow, keys[Ardux_Keys[1]], direction_up, y=-8)
         tools.setMouseButtonEmulation(keybow, mouse, keys[Ardux_Keys[0]], Mouse.LEFT_BUTTON)
         tools.setMouseButtonEmulation(keybow, mouse, keys[Ardux_Keys[2]], Mouse.RIGHT_BUTTON)
         
-        setMouseMove(keybow, keys[Ardux_Keys[3]], direction_scroll_up, wheel=1)
-        setMouseMove(keybow, keys[Ardux_Keys[7]], direction_scroll_down, wheel=-1)
+        set_mouse_move(keybow, keys[Ardux_Keys[3]], direction_scroll_up, wheel=1)
+        set_mouse_move(keybow, keys[Ardux_Keys[7]], direction_scroll_down, wheel=-1)
     else:
         tools.resetKeys(keybow)
         
 def setup_navigation():
     if (current_mode == Mode.Navigation):
+        
+        #Nah, can't do this - will have to treat as taps and holds - separately
+        #Maybe we can at least use the built in hold functionality? Dunno
+        
+        
         tools.setKeyEmulation(keybow, keys[Ardux_Keys[4]], Keycode.LEFT_ARROW)
         tools.setKeyEmulation(keybow, keys[Ardux_Keys[5]], Keycode.DOWN_ARROW)
         tools.setKeyEmulation(keybow, keys[Ardux_Keys[6]], Keycode.RIGHT_ARROW)
@@ -354,11 +548,12 @@ def setup_navigation():
         tools.setKeyEmulation(keybow, keys[Ardux_Keys[7]], Keycode.PAGE_DOWN)
         tools.setKeyEmulation(keybow, keys[Ardux_Keys[0]], Keycode.HOME)
         tools.setKeyEmulation(keybow, keys[Ardux_Keys[2]], Keycode.END)
+        
     else:
         tools.resetKeys(keybow)
 
 
-def setMouseMove(keybow, key_to_set, direction, x: int = 0, y: int = 0, wheel: int = 0):
+def set_mouse_move(keybow, key_to_set, direction, x: int = 0, y: int = 0, wheel: int = 0):
     # Mouse move left
     #key_to_set.set_led(*white)
     @keybow.on_press(key_to_set)
@@ -395,7 +590,13 @@ def move_mouse():
     if direction_scroll_up in directions_held:
         mouse.move(wheel = 1)
 
-
+def set_colours():
+    global current_hue
+    from pmk import hsv_to_rgb
+    # Hue wraps around
+    current_hue = (current_hue + 0.0005) % 1.0
+    r, g, b = hsv_to_rgb(current_hue, 1.0, 0.5)
+    keys[15].set_led(r, g, b)
 
 #If not an import, run on your own. Be free!
 if __name__ == '__main__':

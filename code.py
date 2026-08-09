@@ -6,12 +6,13 @@ import layouts.cmus as cmus
 import layouts.mousekeys as mousekeys
 import layouts.rainbow_arc as rainbow_arc
 import layouts.colour_chooser as colour_chooser
+import layouts.ardux as ardux
 
 keybow = PMK(Hardware())
 keys = keybow.keys
 
 
-layers = [cmus, mousekeys, rainbow_arc, colour_chooser]
+layers = [ardux, cmus, mousekeys, rainbow_arc, colour_chooser]
 
 layer_index = 0
 layers[layer_index].setup(keybow)
@@ -35,4 +36,3 @@ while True:
     
     keybow.update()
     layers[layer_index].update()
-
