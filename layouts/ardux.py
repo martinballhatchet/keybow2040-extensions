@@ -9,13 +9,34 @@ import time
 from adafruit_hid.consumer_control import ConsumerControl
 from adafruit_hid.consumer_control_code import ConsumerControlCode
 
-
-
 #Left handed Ardux ... mostly. I can't see why Shift is so complicated, so I've changed it.
 
-#These are the Keybow keys I'm using.
-Ardux_Keys = [1, 5, 9, 13, 0, 4, 8, 12]
+#TODO:  Get return working in nav modes
+#BUG:   Getting out of navigation mode activates Page Up
+#BUG:   When coming out of hold tap, modifiers aren't reapplied
+#TODO:  When Shift (etc) active, pass them through to the Navigation and Mouse mode. Might be as simple as pressing
+#           them before the navigation
+#TODO:  Print keymap (including shifts?)
+#TODO:  Add Autocomplete mode - type then <space> puts word, but pressing <undo> deletes all characters except ones
+#           typed
+#TODO:  Commands... Copy, Paste, Cut, Undo, Redo - not the ones that Ardux wants
+#TODO:  Make some of this easier using the unused codes
+#TODO:  Look for things I need that aren't there - e.g. ~
+#TODO:  Potentially have a layer that ...
+#           1) print character, 2) move to next character in list and print
+#           3) move to previous characterin list and print 
+#           4) deletes all that have been done in this session except the last 
+#               AND sets the index character so next time you come into this it gets used again
+#               (potential future extensions like assigning to key combo on the fly)
+#TODO:  Function keys?
+#TONOTDO:   Shift Lock - I think I've kind of done it anyway
+#TONOTDO:   Caps Lock - kind of superfluous at this point
+#TONOTDO:   Shift word - not necessary
 
+
+#These are the Keybow keys I'm using.
+#Top left to bottom right. Left handed layout
+Ardux_Keys = [1, 5, 9, 13, 0, 4, 8, 12]
 
 """
 Some unused keys
@@ -31,7 +52,6 @@ Some unused keys
 0010 0010 -> will be shift lock
 
 """
-
 
 
 
@@ -112,7 +132,7 @@ global_keybindings = [
     (0b01111000, Keycode.TAB, "<tab>"),
     (0b00100001, Keycode.BACKSPACE, "<backspace>"),
     (0b00000000, Keycode.DELETE, "<delete>"),
-#    (0b00100010, Keycode., "<shift lock>"), TODO
+#    (0b00100010, Keycode., "<shift lock>"), #TONOTDO: Superfluous
     (0b00011110, Keycode.CAPS_LOCK, "<caps lock>"),
     (0b00111000, Keycode.ESCAPE, "<escape>")
     ]
@@ -162,32 +182,9 @@ holdable_combos = [
 
     
 ]
-
-#DONE: Lock on modifiers. I think One shot by default, but hold maybe later for lock? Maybe they are just key_held at that point?
     
-
-
-#DONE: Arrow layer
 navigation_binding = 0b00100101
-
-
-#DONE: Mouse layer
 mouse_binding = 0b01010010
-
-#TODO: Finish Hold-tap layers
-#TODO: Fix: When coming out of hold tap, modifiers aren't reapplied
-#TODO: Commands... Copy, Paste, Cut, Undo, Redo - not the ones that Ardux wants
-#TODO: Make some of this easier using the unused codes
-#TODO: Look for things I need that aren't there - e.g. ~
-#TODO: Function keys?
-#TODO: Shift Lock?
-#TODO: When Shift (etc) active, pass them through to the Navigation and Mouse mode. Might be as simple as pressing
-# them before the navigation
-#TODO: Sort out exclamation mark
-#TODO: Get return working in nav modes
-#TODO: FIX: Getting out of navigation mode activates Page Up
-#TODO: Add Autocomplete mode - type then <space> puts word, but pressing <undo> deletes all characters except ones
-#      typed
 
 def setup(this_keybow):
     global keys, keybow
@@ -267,7 +264,7 @@ def update():
 
                 if not found_keybinding:
                     print("Missing keybinding: ", f"{keys_pressed_for_tap >> 4:04b} {keys_pressed_for_tap & 0x0F:04b}")
-                keybow.set_all(0, 0, 0)
+                if keybow is not None: keybow.set_all(0, 0, 0)
                 keys_pressed_for_tap = 0
                 set_key_lights_when_unpressed()
 
@@ -288,16 +285,8 @@ def check_for_hold_taps():
     if not current_mode == Mode.Hold:
         raise Exception("We are trying to check for hold taps, but not in Hold Mode!")
         
-    #print("Checking for hold taps!")
-
-    #Am going to use the add_to_keys_tapped() function 
     add_to_keys_tapped(exclude_bitmask = held_keys)
             
-#    if (keys_pressed_for_tap) > 0:
-#        print("Held keys: ", int_as_binary(held_keys), ", Tapped keys: ", int_as_binary(keys_pressed_for_tap), "... now process them!")
-        #print(tapped_keys, ":", held_keys, ":", keys_pressed_for_tap)
-#    print(held_keys, ":", keys_pressed_for_tap)
-#    print(any_keys_pressed(held_keys))
 
     if (keys_pressed_for_tap > 0) and not any_keys_pressed(held_keys):
 #        print("hi")
@@ -318,15 +307,6 @@ def check_for_hold_taps():
             key.set_led(0, 0, 0)
         keys_pressed_for_tap = 0
         
-    #TODO: clear colours
-    #No, non, no ... we need holdables!
-    #holdable_keys
-    #holdable_consumer_controls
-    #define some combos that can be held. Anything above these gets put into tapped.
-    #nah - we have to go with first key held to activate combo I think. If we need cleverer combos later, do them later.
-    #Sigh.
-    #We should then have holdable + tapped = key_press
-    #First holdables should be the normal layers. Can think about whether other holdables make sense - but beware! If there are overlaps
 
 def check_timers():
     global current_mode
@@ -390,10 +370,11 @@ def any_holdable_keys_pressed():
 
 
 def get_held_holdables():
+    assert keys is not None
     held_holdables = 0
     holdable_bitmasks = get_holdable_bitmasks() 
     for index, key_number in enumerate(reversed(Ardux_Keys)):
-        if keybow.keys[key_number].pressed and check_bits(holdable_bitmasks, index):
+        if keys[key_number].pressed and check_bits(holdable_bitmasks, index):
             held_holdables = set_bit(held_keys, index)
     return held_holdables
 
@@ -414,6 +395,7 @@ def ardux_key_pressed(index):
     return ardux_key_by_index(index).pressed
 
 def ardux_key_by_index(index):
+    assert keys is not None
     return keys[Ardux_Keys[7 - index]]
 
 def keys_from_bitmask(bitmask):
@@ -431,6 +413,7 @@ def start_timer():
     timer_started = True
 
 def set_key_lights_when_unpressed():
+    assert keys is not None
     #OK. So - let's set the "top" row to be blank
     #And then the bottom row, one by one, will match whether or not the modifier is active
     for index, key_number in enumerate(Ardux_Keys):
@@ -491,8 +474,9 @@ def add_to_keys_tapped(exclude_bitmask = 0):
 
 
 def any_keys_pressed(exclude_bitmask = 0):
+    assert keys is not None
     for index, key_number in (enumerate(reversed(Ardux_Keys))):
-        if keybow.keys[key_number].pressed and not check_bit(exclude_bitmask, index):
+        if keys[key_number].pressed and not check_bit(exclude_bitmask, index):
             return True
     return False
 
@@ -519,6 +503,7 @@ def key_number_is_in_keys_integer(key_number, keys_integer):
     return ((1 << key_number) & keys_integer) > 0
 
 def setup_mouse():
+    assert keys is not None
     if (current_mode == Mode.Mouse):
         set_mouse_move(keybow, keys[Ardux_Keys[4]], direction_left, x=-8)
         set_mouse_move(keybow, keys[Ardux_Keys[5]], direction_down, y=8)
@@ -533,6 +518,7 @@ def setup_mouse():
         tools.resetKeys(keybow)
         
 def setup_navigation():
+    assert keys is not None
     if (current_mode == Mode.Navigation):
         
         #Nah, can't do this - will have to treat as taps and holds - separately
@@ -591,6 +577,7 @@ def move_mouse():
         mouse.move(wheel = 1)
 
 def set_colours():
+    assert keys is not None
     global current_hue
     from pmk import hsv_to_rgb
     # Hue wraps around
