@@ -1,0 +1,34 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Push to D:\\",
+            "type": "shell",
+            "command": "robocopy",
+            "args": [
+                "${workspaceFolder}",
+                "D:\\",
+                "*.py",
+                "/S",
+                "/XO",
+                "/R:3",
+                "/W:5",
+                "/NDL",
+                "/NFL",
+                "/NJH"
+            ], 
+            "presentation": {
+                "reveal": "silent",         // Focus won't jump unless there is an error
+                "focus": false,             // Keeps cursor in the text editor
+                "panel": "shared"
+            },
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

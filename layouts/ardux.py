@@ -11,9 +11,7 @@ from adafruit_hid.consumer_control_code import ConsumerControlCode
 
 #Left handed Ardux ... mostly. I can't see why Shift is so complicated, so I've changed it.
 
-#TODO:  Get return working in nav modes
-#BUG:   Getting out of navigation mode activates Page Up
-#BUG:   When coming out of hold tap, modifiers aren't reapplied
+#BUG:   Sometimes mouse moves really fast
 #TODO:  When Shift (etc) active, pass them through to the Navigation and Mouse mode. Might be as simple as pressing
 #           them before the navigation
 #TODO:  Print keymap (including shifts?)
@@ -29,6 +27,9 @@ from adafruit_hid.consumer_control_code import ConsumerControlCode
 #               AND sets the index character so next time you come into this it gets used again
 #               (potential future extensions like assigning to key combo on the fly)
 #TODO:  Function keys?
+#TODO:  Sleep timeout
+#TODO:  On Error, clear and reset
+#TODO:  Show mode when nothing pressed
 #TONOTDO:   Shift Lock - I think I've kind of done it anyway
 #TONOTDO:   Caps Lock - kind of superfluous at this point
 #TONOTDO:   Shift word - not necessary
@@ -49,11 +50,8 @@ Some unused keys
 0100 0001
 0101 0000
 0010 1000
-0010 0010 -> will be shift lock
-
+0010 0010 -> won't be shift lock
 """
-
-
 
 class Mode:
     Normal = 0
@@ -73,6 +71,7 @@ hold_delay = 0.2
 current_mode = Mode.Normal
 leaving_hold = False
 current_hue = 0.5
+cancel_tap = False
 
 directions_held = []
 
@@ -82,6 +81,12 @@ direction_up = 2
 direction_down = 3
 direction_scroll_up = 4
 direction_scroll_down = 5
+
+#Used for mouse taps
+mouse_move_x = 0
+mouse_move_y = 0
+mouse_move_wheel = 0
+mouse_acceleration = 1.0
 
 held_keys = 0
 
@@ -137,7 +142,6 @@ global_keybindings = [
     (0b00111000, Keycode.ESCAPE, "<escape>")
     ]
 
-#DONE: Exclamation mark
 global_key_modifiers = [
     #(Bitmask, mod_position, Keycode, debug print :D)
     #OK - this is NOT pure Ardux.
@@ -196,13 +200,17 @@ def setup(this_keybow):
 
 
 def update():
+    try_main_loop()
+
+def main_loop():
     global keys_pressed_for_tap, current_mode, leaving_hold
     
-    check_timers()
+    if current_mode == Mode.Normal or current_mode == Mode.Hold: 
+        check_timers()
 
     if current_mode == Mode.Hold:
         check_for_hold_taps()
-        
+
     else:
 
         if leaving_hold:
@@ -215,6 +223,7 @@ def update():
             set_held_keys(0)
             keys_pressed_for_tap = 0 
             leaving_hold = False
+            set_key_lights_when_unpressed()
         else:
 
             add_to_keys_tapped()
@@ -272,6 +281,21 @@ def update():
             move_mouse()
             
     set_colours()
+
+def try_main_loop():
+    try:
+        main_loop()
+    except Exception as e:
+        print("*** Error in main_loop:", e)
+        print("*** Restarting main loop ***")
+        tools.resetKeys(keybow)
+        global keys_pressed_for_tap, current_mode, leaving_hold, held_keys, mouse_acceleration, keys_modifiers_active, time_press_started, timer_started
+        keys_pressed_for_tap, held_keys, keys_modifiers_active, time_press_started = 0, 0, 0, 0
+        mouse_acceleration = 1.0
+        current_mode = Mode.Normal
+        leaving_hold = False
+        timer_started = False
+        
 
 def int_as_binary(value):
     return f"{value >> 4:04b} {value & 0x0F:04b}"
@@ -346,6 +370,8 @@ def check_timers():
 
                 #Reset these now - we are in hold mode, so we don't want to process any taps that were pressed before the hold was activated
                 keys_pressed_for_tap = 0
+                setup_navigation()
+                setup_mouse()
         else:            
         #Timer not started. If we are already in hold mode, no need to start timer.
             if not current_mode == Mode.Hold:
@@ -381,15 +407,7 @@ def get_held_holdables():
 
 def set_held_keys(value):
     global held_keys
-    #print("Setting held keys:", int_as_binary(value), ", from:", source, ", leaving hold:", leaving_hold)
     held_keys = value
-
-
-
-
-
-
-
 
 def ardux_key_pressed(index):
     return ardux_key_by_index(index).pressed
@@ -482,7 +500,6 @@ def any_keys_pressed(exclude_bitmask = 0):
 
 def get_current_mask():
     mask = 0
-    #OK - we reverse here because we want the most significant bit to start on the left
     for index in range(8):
         if ardux_key_pressed(index):
             #bitshift
@@ -503,78 +520,135 @@ def key_number_is_in_keys_integer(key_number, keys_integer):
     return ((1 << key_number) & keys_integer) > 0
 
 def setup_mouse():
+    global mouse_acceleration
     assert keys is not None
     if (current_mode == Mode.Mouse):
-        set_mouse_move(keybow, keys[Ardux_Keys[4]], direction_left, x=-8)
-        set_mouse_move(keybow, keys[Ardux_Keys[5]], direction_down, y=8)
-        set_mouse_move(keybow, keys[Ardux_Keys[6]], direction_right, x=8)
-        set_mouse_move(keybow, keys[Ardux_Keys[1]], direction_up, y=-8)
-        tools.setMouseButtonEmulation(keybow, mouse, keys[Ardux_Keys[0]], Mouse.LEFT_BUTTON)
-        tools.setMouseButtonEmulation(keybow, mouse, keys[Ardux_Keys[2]], Mouse.RIGHT_BUTTON)
+        set_mouse_move(keys[Ardux_Keys[4]], direction_left, x=-8)
+        set_mouse_move(keys[Ardux_Keys[5]], direction_down, y=8)
+        set_mouse_move(keys[Ardux_Keys[6]], direction_right, x=8)
+        set_mouse_move(keys[Ardux_Keys[1]], direction_up, y=-8)
+        setMouseButtonEmulation(mouse, keys[Ardux_Keys[0]], Mouse.LEFT_BUTTON)
+        setMouseButtonEmulation(mouse, keys[Ardux_Keys[2]], Mouse.RIGHT_BUTTON)
         
-        set_mouse_move(keybow, keys[Ardux_Keys[3]], direction_scroll_up, wheel=1)
-        set_mouse_move(keybow, keys[Ardux_Keys[7]], direction_scroll_down, wheel=-1)
+        set_mouse_move(keys[Ardux_Keys[3]], direction_scroll_up, wheel=1)
+        set_mouse_move(keys[Ardux_Keys[7]], direction_scroll_down, wheel=-1)
+        mouse_acceleration = 1.0
     else:
         tools.resetKeys(keybow)
         
 def setup_navigation():
     assert keys is not None
     if (current_mode == Mode.Navigation):
-        
-        #Nah, can't do this - will have to treat as taps and holds - separately
-        #Maybe we can at least use the built in hold functionality? Dunno
-        
-        
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[4]], Keycode.LEFT_ARROW)
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[5]], Keycode.DOWN_ARROW)
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[6]], Keycode.RIGHT_ARROW)
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[1]], Keycode.UP_ARROW)
-        
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[3]], Keycode.PAGE_UP)
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[7]], Keycode.PAGE_DOWN)
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[0]], Keycode.HOME)
-        tools.setKeyEmulation(keybow, keys[Ardux_Keys[2]], Keycode.END)
-        
+        set_key_tap_and_key_hold(keys[Ardux_Keys[4]], Keycode.LEFT_ARROW)
+        set_key_tap_and_key_hold(keys[Ardux_Keys[5]], Keycode.DOWN_ARROW)
+        set_key_tap_and_key_hold(keys[Ardux_Keys[6]], Keycode.RIGHT_ARROW)
+        set_key_tap_and_key_hold(keys[Ardux_Keys[1]], Keycode.UP_ARROW)
+        set_key_tap_and_key_hold(keys[Ardux_Keys[3]], Keycode.PAGE_UP)
+        set_key_tap_and_key_hold(keys[Ardux_Keys[7]], Keycode.PAGE_DOWN)
+        set_key_tap_and_key_hold(keys[Ardux_Keys[0]], Keycode.HOME)
+        set_key_tap_and_key_hold(keys[Ardux_Keys[2]], Keycode.END)
     else:
         tools.resetKeys(keybow)
 
 
-def set_mouse_move(keybow, key_to_set, direction, x: int = 0, y: int = 0, wheel: int = 0):
-    # Mouse move left
-    #key_to_set.set_led(*white)
-    @keybow.on_press(key_to_set)
-    def press_handler(key):
-        mouse.move(x, y, wheel)
+# This just uses Hold and Release
+# Where Release is used to decide whether or not to tap, using built in key.held property
+# If there are two keys pressed, cancel!
+def set_key_tap_and_key_hold(key_to_set, keycode):
 
-    @keybow.on_hold(key_to_set)
+
+    @keybow.on_hold(key_to_set)  # type: ignore
     def hold_handler(key):
-        #key_to_set.set_led(*red_bright)
+        keyboard.press(keycode)
+
+    @keybow.on_release(key_to_set) # type: ignore
+    def release_handler(key):
+        global cancel_tap
+
+        if not key.held:
+            if any_keys_pressed(): 
+                cancel_tap = True
+            elif cancel_tap:
+                #No further keys remaining,
+                #clear cancel_tap but don't tap the key
+                cancel_tap = False
+            else:
+                key_tapped(keycode)
+        keyboard.release(keycode)
+
+# Similar to above, but mouse buttons
+def setMouseButtonEmulation(mouse, key_to_set, mouseButton):
+
+    @keybow.on_hold(key_to_set)  # type: ignore
+    def hold_handler(key):
+        mouse.press(mouseButton)
+
+    @keybow.on_release(key_to_set) # type: ignore
+    def release_handler(key):
+        if not key.held:
+            mouse_clicked(mouseButton)
+        mouse.release(mouseButton)
+
+
+def key_tapped(keycode):
+    keyboard.send(keycode)
+
+def mouse_move_tapped(mouse_move_x, mouse_move_y, mouse_move_wheel):
+    mouse.move(mouse_move_x, mouse_move_y, mouse_move_wheel)
+
+def mouse_clicked(mouseButton):
+    mouse.click(mouseButton)
+
+def set_mouse_move( key_to_set, direction, x: int = 0, y: int = 0, wheel: int = 0):
+    # Mouse move left
+    @keybow.on_press(key_to_set) # type: ignore
+    def press_handler(key):
+        global mouse_move_x, mouse_move_y, mouse_move_wheel
+        mouse_move_x = x
+        mouse_move_y = y
+        mouse_move_wheel = wheel
+
+    @keybow.on_hold(key_to_set)  # type: ignore
+    def hold_handler(key):
         directions_held.append(direction)
 
-    @keybow.on_release(key_to_set)
+    @keybow.on_release(key_to_set)  # type: ignore
     def release_handler(key):
-        #key_to_set.set_led(*white)
+        global mouse_move_x, mouse_move_y, mouse_move_wheel, mouse_acceleration
         if direction in directions_held:
             directions_held.remove(direction)
+            mouse_acceleration = 1.0
+
+        if not key.held:
+            mouse_move_tapped(mouse_move_x, mouse_move_y, mouse_move_wheel)
+        mouse_move_x, mouse_move_y, mouse_move_wheel = 0, 0, 0
+
 
 def move_mouse():
+    global mouse_acceleration
     if direction_up in directions_held:        
-        mouse.move(y = -8)
+        mouse.move(y = int(-8 * mouse_acceleration))
 
     if direction_left in directions_held:
-        mouse.move(x = -8)
+        mouse.move(x = int(-8 * mouse_acceleration))
 
     if direction_right in directions_held:
-        mouse.move(x = 8)
+        mouse.move(x = int(8 * mouse_acceleration))
 
     if direction_down in directions_held:
-        mouse.move(y = 8)
+        mouse.move(y = int(8 * mouse_acceleration))
         
     if direction_scroll_down in directions_held:
-        mouse.move(wheel = -1)
+        mouse.move(wheel = int(-1 * mouse_acceleration))
         
     if direction_scroll_up in directions_held:
-        mouse.move(wheel = 1)
+        mouse.move(wheel = int(1 * mouse_acceleration))
+
+    mouse_acceleration = mouse_acceleration * 1.01
+
+    #TODO: Fix this properly
+    if mouse_acceleration > 10.0:
+        mouse_acceleration = 10.0
 
 def set_colours():
     assert keys is not None
